@@ -1,6 +1,6 @@
 import os
 
-import quartz
+from quartz import PySimpleHybridEnv
 
 
 def main():
@@ -11,7 +11,7 @@ def main():
 
     # create a dummy mapping file
     with open("./mapping.txt", "w") as file_handle:
-        for i in range(65):
+        for i in range(127):
             file_handle.write(str(i) + " ")
 
     # check circuits
@@ -20,7 +20,7 @@ def main():
             env = PySimpleHybridEnv(
                 # basic parameters
                 qasm_file_path=target_dir + "/" + circuit_name,
-                backend_type_str="IBM_Q65_HUMMINGBIRD",
+                backend_type_str="IBM_Q127_EAGLE",
                 initial_mapping_file_path=f"./mapping.txt",
                 # randomness and buffer
                 seed=1,
@@ -32,14 +32,14 @@ def main():
                 allow_nop_in_initial=True,
                 initial_phase_reward=0,
             )
-            print(env.step(env.get_action_space()[1]))
-            print(env.step(env.get_action_space()[1]))
-            print(env.step(env.get_action_space()[1]))
-            print(env.step(env.get_action_space()[1]))
-            print(env.step(env.get_action_space()[1]))
+            env.step(env.get_action_space()[1])
+            env.step(env.get_action_space()[1])
+            env.step(env.get_action_space()[1])
+            env.step(env.get_action_space()[1])
+            env.step(env.get_action_space()[1])
             print(f"[Circuit {idx} - {circuit_name}] Test passed!")
-        except Exception:
-            print(f"[Circuit {idx} - {circuit_name}] Test failed!")
+        except Exception as error:
+            print(f"[Circuit {idx} - {circuit_name}] Test failed! ({error})")
 
 
 if __name__ == '__main__':
