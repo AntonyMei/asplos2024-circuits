@@ -3,6 +3,35 @@ import os
 from qiskit.circuit import QuantumCircuit
 
 
+def pass0_reg_count(input_path):
+    with open(input_path, "r") as input_file:
+        qreg_count = 0
+        creg_count = 0
+        for line in input_file:
+            if line.startswith("//"):
+                continue
+            elif not line.strip():
+                continue
+            elif line.startswith("OPENQASM"):
+                continue
+            elif line.startswith("include"):
+                continue
+            elif line.startswith("qreg"):
+                # parse the line
+                reg_array_name = list(filter(None, line.split(' ')))[1].split(';')[0]
+                reg_array_count = int(reg_array_name.split('[')[1].split(']')[0])
+                qreg_count += reg_array_count
+            elif line.startswith("creg"):
+                # parse the line (we suppose there is only one creg line, o.w. pass 1 will fail)
+                reg_array_name = list(filter(None, line.split(' ')))[1].split(';')[0]
+                reg_array_count = int(reg_array_name.split('[')[1].split(']')[0])
+                creg_count += reg_array_count
+                break
+            else:
+                assert False, f"[{input_path}] Unknown command in header: {line}!"
+    return qreg_count, creg_count
+
+
 def pass1_reg_renaming(input_path, output_path):
     with open(input_path, "r") as input_file:
         with open(output_path, "w") as output_file:
@@ -73,8 +102,34 @@ def pass1_reg_renaming(input_path, output_path):
                     output_file.write(new_line)
 
 
+def pass2_reverse_circuit(input_path, output_path):
+    circuit = QuantumCircuit.from_qasm_file(input_path)
+    reversed_circuit = circuit.inverse()
+    reversed_circuit.qasm(filename=output_path)
+
+
+def parse_dir(dir_name, is_mqt):
+    if not is_mqt:
+        for file_name in os.listdir(dir_name):
+            pass
+
+
 def main():
-    pass1_reg_renaming(input_path="./test.qasm", output_path="pass1.qasm")
+    # list of dirs to parse
+    path_0 = "./raw_circuits/1-quartz"
+    path_1 = "./raw_circuits/2-MQT-scalable"
+    path_2 = "./raw_circuits/3-MQT-fixed"
+
+    # make basic dirs
+    os.makedirs("./qasm_files/qasm27", exist_ok=True)
+    os.makedirs("./qasm_files/qasm65", exist_ok=True)
+    os.makedirs("./qasm_files/qasm127", exist_ok=True)
+    os.makedirs("./qasm_files/quartz", exist_ok=True)
+
+    # parse the dirs
+    parse_dir(path_0, False)
+    # parse_dir(path_1, True)
+    # parse_dir(path_2, True)
 
 
 if __name__ == '__main__':
