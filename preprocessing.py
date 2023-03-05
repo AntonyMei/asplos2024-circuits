@@ -1,4 +1,5 @@
 import os
+import tqdm
 
 from qiskit.circuit import QuantumCircuit
 
@@ -32,7 +33,7 @@ def pass0_reg_count(input_path):
     return qreg_count, creg_count
 
 
-def pass1_reg_renaming(input_path, output_path):
+def pass1_reg_renaming(input_path, output_path, ignore_measure=False):
     with open(input_path, "r") as input_file:
         with open(output_path, "w") as output_file:
             # prepare a map for reg renaming: ori -> new
@@ -93,6 +94,8 @@ def pass1_reg_renaming(input_path, output_path):
                     output_file.write(new_line)
 
                 elif line.startswith("measure"):
+                    if ignore_measure:
+                        continue
                     # parse the line
                     arg_list = list(filter(None, line.replace(';', ' ').split(' ')[:-1]))
                     assert len(arg_list) == 4
@@ -108,15 +111,36 @@ def pass2_reverse_circuit(input_path, output_path):
     reversed_circuit.qasm(filename=output_path)
 
 
-def parse_dir(dir_name, is_mqt):
-    if not is_mqt:
-        for file_name in os.listdir(dir_name):
-            pass
+def parse_dir(dir_name):
+    print(f"Parsing dir {dir_name}:")
+    for file_name in tqdm.tqdm(os.listdir(dir_name)):
+        # check which folder the current file belongs to
+        qreg_count, creg_count = pass0_reg_count(os.path.join(dir_name, file_name))
+        if qreg_count < 25:
+            target_dir_name = "./qasm_files/qasm27"
+        elif qreg_count < 55:
+            target_dir_name = "./qasm_files/qasm65"
+        elif qreg_count <= 127:
+            target_dir_name = "./qasm_files/qasm127"
+        else:
+            assert False, f"Too many qubits in {file_name}: {qreg_count}"
+
+        # make up the output file name
+        file_prefix = file_name.split('.')[0].split('_')[0]
+        file_suffix = file_name.split('.')[0].split('_')[-1]
+        output_file_name = f"{file_prefix}_qubit{file_suffix}.qasm"
+        reversed_file_name = f"{file_prefix}_qubit{file_suffix}_reversed.qasm"
+
+        # rename registers in the file
+        pass1_reg_renaming(input_path=os.path.join(dir_name, file_name),
+                           output_path=os.path.join(target_dir_name, output_file_name),
+                           ignore_measure=True)
+        pass2_reverse_circuit(input_path=os.path.join(target_dir_name, output_file_name),
+                              output_path=os.path.join(target_dir_name, reversed_file_name))
 
 
 def main():
     # list of dirs to parse
-    path_0 = "./raw_circuits/1-quartz"
     path_1 = "./raw_circuits/2-MQT-scalable"
     path_2 = "./raw_circuits/3-MQT-fixed"
 
@@ -124,12 +148,10 @@ def main():
     os.makedirs("./qasm_files/qasm27", exist_ok=True)
     os.makedirs("./qasm_files/qasm65", exist_ok=True)
     os.makedirs("./qasm_files/qasm127", exist_ok=True)
-    os.makedirs("./qasm_files/quartz", exist_ok=True)
 
     # parse the dirs
-    parse_dir(path_0, False)
-    # parse_dir(path_1, True)
-    # parse_dir(path_2, True)
+    parse_dir(path_1)
+    parse_dir(path_2)
 
 
 if __name__ == '__main__':
