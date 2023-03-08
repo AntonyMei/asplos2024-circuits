@@ -1,3 +1,5 @@
+import os
+
 from qiskit import QuantumCircuit
 from qiskit.compiler import transpile
 from qiskit.transpiler import CouplingMap
@@ -54,10 +56,33 @@ def parse_gate_type(tp, circuit):
 
 
 def save_mapping(filename, mapping):
-    with open(filename, "a") as file:
-        for i in range(len(mapping)):
-            file.write(f"{mapping[i]} ")
+    with open(filename, "w") as file:
+        for idx in range(len(mapping)):
+            file.write(f"{mapping[idx]} ")
         file.write("\n")
+
+
+def get_num_qubits(filename):
+    num_qubits = None
+    with open("./qasm_files/" + qasm_file_name) as file:
+        # parse the rest
+        line = file.readline()
+        while line != '':
+            if not line.strip():
+                # empty line ('\n', "\r\n", "  \n", ...)
+                pass
+            elif line.startswith("//"):
+                pass
+            elif line.startswith("OPENQASM"):
+                pass
+            elif line.startswith("include"):
+                pass
+            elif line.startswith("qreg"):
+                num_qubits = int(line.split(' ')[1].split(']')[0].split('[')[1])
+                break
+            else:
+                assert False, f"Unknown command: {line}!"
+        return num_qubits
 
 
 # def IBM_Q20_Tokyo():
@@ -314,7 +339,7 @@ def sabre_round(seed, qasm_file_name, device_name):
         coupling_map, num_regs = IBM_Q27_Falcon(), 27
     elif device_name == "IBM_Q65_HUMMINGBIRD":
         coupling_map, num_regs = IBM_Q65_Hummingbird(), 65
-    elif device_name == "IBM_Q127_Eagle":
+    elif device_name == "IBM_Q127_EAGLE":
         coupling_map, num_regs = IBM_Q127_Eagle(), 127
     else:
         raise NotImplementedError
@@ -322,7 +347,7 @@ def sabre_round(seed, qasm_file_name, device_name):
     # parse qasm file into a circuit
     circuit = QuantumCircuit(num_regs)
     num_qubits = None
-    with open("./qasm_files/" + qasm_file_name) as file:
+    with open(qasm_file_name) as file:
         # parse the rest
         line = file.readline()
         while line != '':
@@ -403,7 +428,6 @@ def sabre_round(seed, qasm_file_name, device_name):
 
 def async_run_sabre(qasm_file_name, device_name, num_runs, num_saves, seed):
     # run sabre on target circuit and device in parallel
-    print(f"Start Sabre for initial mappings, circuit: {qasm_file_name}, device: {device_name}.")
 
     # run sabre_round for num_runs times and save num_saves ones with the least swap count
     # uses python multiprocess pool with multi-arg support (can also be replaced with pool.starmap)
@@ -432,19 +456,64 @@ def async_run_sabre(qasm_file_name, device_name, num_runs, num_saves, seed):
     return save_swap_count, save_gate_count, save_logical2physical, save_circuit
 
 
-def sabre_benchmark():
-    # TODO:finish this
-    # save the results
-    # result_printed = False
-    with open(mapping_save_path, "w") as file:
-        for swap_count, mapping in zip(save_swap_count, save_logical2physical):
-            # if not result_printed:
-            #     print(f"Save {swap_count}: {mapping}.")
-            for idx in range(len(mapping)):
-                file.write(f"{mapping[idx]} ")
-            file.write("\n")
-    print(save_swap_count)
-    return save_swap_count, save_logical2physical
+def sabre_benchmark(input_dir_name, output_dir_name, log_path, seed):
+    # run sabre for each circuit in the benchmark
+    with open(log_path) as log_file:
+        for circuit_name in os.listdir(input_dir_name):
+            # skip reversed circuits
+            if "reversed" in circuit_name:
+                continue
+
+            # for forward circuit, generate all necessary file names
+            circuit_path = os.path.join(input_dir_name, circuit_name)
+            reversed_circuit_path = os.path.join(input_dir_name, circuit_name.split('.')[0] + "_reversed.qasm")
+
+            # get applicable backend
+            num_qubits = get_num_qubits(filename=circuit_path)
+            backend_type = []
+            if num_qubits <= 27:
+                backend_type.append("IBM_Q27_FALCON")
+            if num_qubits <= 65:
+                backend_type.append("IBM_Q65_HUMMINGBIRD")
+            if num_qubits <= 127:
+                backend_type.append("IBM_Q127_EAGLE")
+            assert len(backend_type) > 0, f"Error: the circuit is too large: {num_qubits} qubits!"
+
+            # run SABRE 100k benchmark: forward and backward path each has budget 2500
+            # since one round runs sabre 20 times, the total number of sabre runs is 2500 * 20 * 2 = 100k
+            for device_name in backend_type:
+                # run sabre on both forward and backward circuits
+                f_swap_count, f_gate_count, f_l2p_mapping, f_mapped_circuit = async_run_sabre(
+                    qasm_file_name=circuit_path,
+                    device_name=device_name,
+                    num_runs=2500,
+                    num_saves=1,
+                    seed=seed)
+                b_swap_count, b_gate_count, b_l2p_mapping, b_mapped_circuit = async_run_sabre(
+                    qasm_file_name=reversed_circuit_path,
+                    device_name=device_name,
+                    num_runs=2500,
+                    num_saves=1,
+                    seed=seed)
+
+                # prepare for output
+                _name_prefix = circuit_name.split('.')[0]
+                save_circuit_path = os.path.join(output_dir_name,
+                                                 _name_prefix + f"_{device_name}_forward_swap_{f_swap_count}_gate_{f_gate_count}.qasm")
+                save_mapping_path = os.path.join(output_dir_name,
+                                                 _name_prefix + f"_{device_name}_forward_swap_{f_swap_count}_gate_{f_gate_count}.l2p")
+                save_reversed_circuit_path = os.path.join(output_dir_name,
+                                                          _name_prefix + f"_{device_name}_backward_swap_{b_swap_count}_gate_{b_gate_count}.qasm")
+                save_reversed_mapping_path = os.path.join(output_dir_name,
+                                                          _name_prefix + f"_{device_name}_backward_swap_{b_swap_count}_gate_{b_gate_count}.l2p")
+
+                # output to terminal & file
+                f_mapped_circuit.qasm(filename=save_circuit_path)
+                b_mapped_circuit.qasm(filename=save_reversed_circuit_path)
+                save_mapping(filename=save_mapping_path, mapping=f_l2p_mapping)
+                save_mapping(filename=save_reversed_mapping_path, mapping=b_l2p_mapping)
+                print(_name_prefix, device_name, "f", f_swap_count, f_gate_count, "b", b_swap_count, b_gate_count)
+                log_file.write(f"{_name_prefix} {device_name} f {f_swap_count} {f_gate_count} b {b_swap_count} {b_gate_count}")
 
 
 def main():
