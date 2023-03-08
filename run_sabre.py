@@ -51,7 +51,10 @@ def parse_gate_type(tp, circuit):
         return circuit.x
     elif tp == "sx":
         return circuit.sx
+    elif tp =="sxdg":
+        return circuit.sxdg
     else:
+        print(f"Unknown gate: {tp}")
         raise NotImplementedError
 
 
@@ -64,7 +67,7 @@ def save_mapping(filename, mapping):
 
 def get_num_qubits(filename):
     num_qubits = None
-    with open("./qasm_files/" + qasm_file_name) as file:
+    with open(filename) as file:
         # parse the rest
         line = file.readline()
         while line != '':
@@ -82,6 +85,7 @@ def get_num_qubits(filename):
                 break
             else:
                 assert False, f"Unknown command: {line}!"
+            line = file.readline()
         return num_qubits
 
 
@@ -458,7 +462,7 @@ def async_run_sabre(qasm_file_name, device_name, num_runs, num_saves, seed):
 
 def sabre_benchmark(input_dir_name, output_dir_name, log_path, seed):
     # run sabre for each circuit in the benchmark
-    with open(log_path) as log_file:
+    with open(log_path, "w") as log_file:
         for circuit_name in os.listdir(input_dir_name):
             # skip reversed circuits
             if "reversed" in circuit_name:
@@ -496,6 +500,16 @@ def sabre_benchmark(input_dir_name, output_dir_name, log_path, seed):
                     num_saves=1,
                     seed=seed)
 
+                # unpacking parameters
+                f_swap_count = f_swap_count[0]
+                f_gate_count = f_gate_count[0]
+                f_l2p_mapping = f_l2p_mapping[0]
+                f_mapped_circuit = f_mapped_circuit[0]
+                b_swap_count = b_swap_count[0]
+                b_gate_count = b_gate_count[0]
+                b_l2p_mapping = b_l2p_mapping[0]
+                b_mapped_circuit = b_mapped_circuit[0]
+
                 # prepare for output
                 _name_prefix = circuit_name.split('.')[0]
                 save_circuit_path = os.path.join(output_dir_name,
@@ -513,18 +527,27 @@ def sabre_benchmark(input_dir_name, output_dir_name, log_path, seed):
                 save_mapping(filename=save_mapping_path, mapping=f_l2p_mapping)
                 save_mapping(filename=save_reversed_mapping_path, mapping=b_l2p_mapping)
                 print(_name_prefix, device_name, "f", f_swap_count, f_gate_count, "b", b_swap_count, b_gate_count)
-                log_file.write(f"{_name_prefix} {device_name} f {f_swap_count} {f_gate_count} b {b_swap_count} {b_gate_count}")
+                log_file.write(f"{_name_prefix} {device_name} f {f_swap_count} {f_gate_count} b {b_swap_count} {b_gate_count}\n")
 
 
 def main():
-    # This is used for tests (need to change qasm path to start here)
-    # gf2^E5_mult_after_heavy.qasm, barenco_tof_10_before.qasm, csla_mux_3_after_heavy.qasm, qcla_adder_10_before.qasm
-    # IBM_Q20_TOKYO, IBM_Q27_FALCON, IBM_Q65_HUMMINGBIRD
-    qasm_file_name = "gf2^E5_mult_after_heavy.qasm"
-    device_name = "IBM_Q27_FALCON"
-    num_runs = 1000
-    num_saves = 10
-    run_sabre(qasm_file_name, device_name, num_runs, num_saves, ["./test_1116"], seed=0)
+    # run sabre benchmark on all circuits
+    seed = 0
+    log_file_name = "./sabre/run_summary.txt"
+    dirs = {"./qasm_files/qasm27": "./sabre/qasm27",
+            "./qasm_files/qasm65": "./sabre/qasm65",
+            "./qasm_files/qasm127": "./sabre/qasm127",
+            "./qasm_files/quartz": "./sabre/quartz"}
+
+    # check if the target dirs exist
+    for input_dir in dirs:
+        os.makedirs(dirs[input_dir], exist_ok=True)
+
+    # run the benchmark
+    for input_dir in dirs:
+        output_dir = dirs[input_dir]
+        sabre_benchmark(input_dir_name=input_dir, output_dir_name=output_dir,
+                        log_path=log_file_name, seed=seed)
 
 
 if __name__ == '__main__':
