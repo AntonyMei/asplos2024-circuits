@@ -172,7 +172,7 @@ def IBM_Q65_Hummingbird():
 def IBM_Q127_Eagle():
     # identical to IBM Q65 Hummingbird
     coupling = [
-        # first row (Note [8, 9] is NOT connected!)
+        # first row
         [0, 1],
         [1, 2],
         [2, 3],
@@ -181,6 +181,7 @@ def IBM_Q127_Eagle():
         [5, 6],
         [6, 7],
         [7, 8],
+        [8, 9],
         [9, 10],
         [10, 11],
         [11, 12],
