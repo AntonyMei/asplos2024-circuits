@@ -7,6 +7,8 @@ from qiskit.transpiler.passes import SabreLayout, SabreSwap
 from qiskit.transpiler.passmanager_config import PassManagerConfig
 from qiskit.transpiler.passmanager import PassManager
 
+from fidelity import Q27_Fake_Auckland, Q65_Fake_Ithaca, Q127_Fake_Washington, cal_sum_ln_cx_fidelity
+
 from math import pi
 from tqdm import tqdm
 from functools import partial
@@ -51,7 +53,7 @@ def parse_gate_type(tp, circuit):
         return circuit.x
     elif tp == "sx":
         return circuit.sx
-    elif tp =="sxdg":
+    elif tp == "sxdg":
         return circuit.sxdg
     elif tp == "z":
         return circuit.z
@@ -343,11 +345,11 @@ def sabre_round(seed, qasm_file_name, device_name):
         # coupling_map, num_regs = IBM_Q20_Tokyo(), 20
         assert False, "IBM_Q20_TOKYO is no longer supported!"
     elif device_name == "IBM_Q27_FALCON":
-        coupling_map, num_regs = IBM_Q27_Falcon(), 27
+        coupling_map, num_regs, fidelity_map = IBM_Q27_Falcon(), 27, Q27_Fake_Auckland()
     elif device_name == "IBM_Q65_HUMMINGBIRD":
-        coupling_map, num_regs = IBM_Q65_Hummingbird(), 65
+        coupling_map, num_regs, fidelity_map = IBM_Q65_Hummingbird(), 65, Q65_Fake_Ithaca()
     elif device_name == "IBM_Q127_EAGLE":
-        coupling_map, num_regs = IBM_Q127_Eagle(), 127
+        coupling_map, num_regs, fidelity_map = IBM_Q127_Eagle(), 127, Q127_Fake_Washington()
     else:
         raise NotImplementedError
 
@@ -430,7 +432,12 @@ def sabre_round(seed, qasm_file_name, device_name):
         for key in initial_layout:
             logical2physical[key.index] = initial_layout[key]
 
-    return sabre_swap_count, sabre_gate_count, logical2physical, sabre_circuit
+    # calculate sum ln cx fidelity
+    sum_ln_cx_fidelity = cal_sum_ln_cx_fidelity(circuit=sabre_circuit,
+                                                fidelity_map=fidelity_map,
+                                                ref_swap_count=sabre_swap_count)
+
+    return sabre_swap_count, sabre_gate_count, logical2physical, sabre_circuit, sum_ln_cx_fidelity
 
 
 def async_run_sabre(qasm_file_name, device_name, num_runs, num_saves, seed):
@@ -440,27 +447,42 @@ def async_run_sabre(qasm_file_name, device_name, num_runs, num_saves, seed):
     # uses python multiprocess pool with multi-arg support (can also be replaced with pool.starmap)
     # ref: https://stackoverflow.com/questions/5442910/how-to-use-multiprocessing-pool-map-with-multiple-arguments
     process_pool = multiprocessing.Pool(10)
-    sabre_swap_count_list, sabre_gate_count_list, logical2physical_list, sabre_circuit_list = zip(
-        *process_pool.map(partial(sabre_round, qasm_file_name=qasm_file_name, device_name=device_name),
-                          range(seed, seed + num_runs)))
+    sabre_swap_count_list, sabre_gate_count_list, logical2physical_list, sabre_circuit_list, sum_ln_cx_fidelity_list \
+        = zip(*process_pool.map(partial(sabre_round, qasm_file_name=qasm_file_name, device_name=device_name),
+                                range(seed, seed + num_runs)))
     sabre_swap_count_list = list(sabre_swap_count_list)
     sabre_gate_count_list = list(sabre_gate_count_list)
     logical2physical_list = list(logical2physical_list)
     sabre_circuit_list = list(sabre_circuit_list)
+    sum_ln_cx_fidelity_list = list(sum_ln_cx_fidelity_list)
 
     save_swap_count = []
     save_gate_count = []
     save_logical2physical = []
     save_circuit = []
-    for swap_count, gate_count, mapping, circuit in sorted(
-            zip(sabre_swap_count_list, sabre_gate_count_list, logical2physical_list, sabre_circuit_list),
+    save_sum_ln_cx_fidelity = []
+    for swap_count, gate_count, mapping, circuit, sum_ln_cx_fidelity in sorted(
+            zip(sabre_swap_count_list, sabre_gate_count_list, logical2physical_list, sabre_circuit_list,
+                sum_ln_cx_fidelity_list),
             key=lambda pair: pair[0])[:num_saves]:
         save_swap_count.append(swap_count)
         save_gate_count.append(gate_count)
         save_logical2physical.append(mapping)
         save_circuit.append(circuit)
+        save_sum_ln_cx_fidelity.append(sum_ln_cx_fidelity)
 
-    return save_swap_count, save_gate_count, save_logical2physical, save_circuit
+    for swap_count, gate_count, mapping, circuit, sum_ln_cx_fidelity in sorted(
+            zip(sabre_swap_count_list, sabre_gate_count_list, logical2physical_list, sabre_circuit_list,
+                sum_ln_cx_fidelity_list),
+            key=lambda pair: pair[4], reverse=True)[:num_saves]:
+        save_swap_count.append(swap_count)
+        save_gate_count.append(gate_count)
+        save_logical2physical.append(mapping)
+        save_circuit.append(circuit)
+        save_sum_ln_cx_fidelity.append(sum_ln_cx_fidelity)
+
+    # returns two circuits, the first with the fewest number of swaps, the second with the highest fidelity
+    return save_swap_count, save_gate_count, save_logical2physical, save_circuit, save_sum_ln_cx_fidelity
 
 
 def sabre_benchmark(input_dir_name, output_dir_name, log_path, seed):
@@ -491,13 +513,13 @@ def sabre_benchmark(input_dir_name, output_dir_name, log_path, seed):
             # since one round runs sabre 20 times, the total number of sabre runs is 2500 * 20 * 2 = 100k
             for device_name in backend_type:
                 # run sabre on both forward and backward circuits
-                f_swap_count, f_gate_count, f_l2p_mapping, f_mapped_circuit = async_run_sabre(
+                f_swap_count, f_gate_count, f_l2p_mapping, f_mapped_circuit, f_sum_ln_cx_fidelity = async_run_sabre(
                     qasm_file_name=circuit_path,
                     device_name=device_name,
                     num_runs=2500,
                     num_saves=1,
                     seed=seed)
-                b_swap_count, b_gate_count, b_l2p_mapping, b_mapped_circuit = async_run_sabre(
+                b_swap_count, b_gate_count, b_l2p_mapping, b_mapped_circuit, b_sum_ln_cx_fidelity = async_run_sabre(
                     qasm_file_name=reversed_circuit_path,
                     device_name=device_name,
                     num_runs=2500,
@@ -505,33 +527,66 @@ def sabre_benchmark(input_dir_name, output_dir_name, log_path, seed):
                     seed=seed)
 
                 # unpacking parameters
-                f_swap_count = f_swap_count[0]
-                f_gate_count = f_gate_count[0]
-                f_l2p_mapping = f_l2p_mapping[0]
-                f_mapped_circuit = f_mapped_circuit[0]
-                b_swap_count = b_swap_count[0]
-                b_gate_count = b_gate_count[0]
-                b_l2p_mapping = b_l2p_mapping[0]
-                b_mapped_circuit = b_mapped_circuit[0]
+                # 0: swap count is fewest, 1: fidelity is highest
+                f_swap_count0 = f_swap_count[0]
+                f_swap_count1 = f_swap_count[1]
+                f_gate_count0 = f_gate_count[0]
+                f_gate_count1 = f_gate_count[1]
+                f_l2p_mapping0 = f_l2p_mapping[0]
+                f_l2p_mapping1 = f_l2p_mapping[1]
+                f_mapped_circuit0 = f_mapped_circuit[0]
+                f_mapped_circuit1 = f_mapped_circuit[1]
+                f_sum_ln_cx_fidelity0 = f_sum_ln_cx_fidelity[0]
+                f_sum_ln_cx_fidelity1 = f_sum_ln_cx_fidelity[1]
+                b_swap_count0 = b_swap_count[0]
+                b_swap_count1 = b_swap_count[1]
+                b_gate_count0 = b_gate_count[0]
+                b_gate_count1 = b_gate_count[1]
+                b_l2p_mapping0 = b_l2p_mapping[0]
+                b_l2p_mapping1 = b_l2p_mapping[1]
+                b_mapped_circuit0 = b_mapped_circuit[0]
+                b_mapped_circuit1 = b_mapped_circuit[1]
+                b_sum_ln_cx_fidelity0 = b_sum_ln_cx_fidelity[0]
+                b_sum_ln_cx_fidelity1 = b_sum_ln_cx_fidelity[1]
 
                 # prepare for output
                 _name_prefix = circuit_name.split('.')[0]
-                save_circuit_path = os.path.join(output_dir_name,
-                                                 _name_prefix + f"_{device_name}_forward_swap_{f_swap_count}_gate_{f_gate_count}.qasm")
-                save_mapping_path = os.path.join(output_dir_name,
-                                                 _name_prefix + f"_{device_name}_forward_swap_{f_swap_count}_gate_{f_gate_count}.l2p")
-                save_reversed_circuit_path = os.path.join(output_dir_name,
-                                                          _name_prefix + f"_{device_name}_backward_swap_{b_swap_count}_gate_{b_gate_count}.qasm")
-                save_reversed_mapping_path = os.path.join(output_dir_name,
-                                                          _name_prefix + f"_{device_name}_backward_swap_{b_swap_count}_gate_{b_gate_count}.l2p")
+                save_circuit_path0 = os.path.join(output_dir_name,
+                                                  _name_prefix + f"_{device_name}_best_gate_count_forward_swap_{f_swap_count0}_gate_{f_gate_count0}_fidelity{f_sum_ln_cx_fidelity0}.qasm")
+                save_mapping_path0 = os.path.join(output_dir_name,
+                                                  _name_prefix + f"_{device_name}_best_gate_count_forward_swap_{f_swap_count0}_gate_{f_gate_count0}_fidelity{f_sum_ln_cx_fidelity0}.l2p")
+                save_reversed_circuit_path0 = os.path.join(output_dir_name,
+                                                           _name_prefix + f"_{device_name}_best_gate_count_backward_swap_{b_swap_count0}_gate_{b_gate_count0}_fidelity{b_sum_ln_cx_fidelity0}.qasm")
+                save_reversed_mapping_path0 = os.path.join(output_dir_name,
+                                                           _name_prefix + f"_{device_name}_best_gate_count_backward_swap_{b_swap_count0}_gate_{b_gate_count0}_fidelity{b_sum_ln_cx_fidelity0}.l2p")
+                save_circuit_path1 = os.path.join(output_dir_name,
+                                                  _name_prefix + f"_{device_name}_best_fidelity_forward_swap_{f_swap_count1}_gate_{f_gate_count1}_fidelity{f_sum_ln_cx_fidelity1}.qasm")
+                save_mapping_path1 = os.path.join(output_dir_name,
+                                                  _name_prefix + f"_{device_name}_best_fidelity_forward_swap_{f_swap_count1}_gate_{f_gate_count1}_fidelity{f_sum_ln_cx_fidelity1}.l2p")
+                save_reversed_circuit_path1 = os.path.join(output_dir_name,
+                                                           _name_prefix + f"_{device_name}_best_fidelity_backward_swap_{b_swap_count1}_gate_{b_gate_count1}_fidelity{b_sum_ln_cx_fidelity1}.qasm")
+                save_reversed_mapping_path1 = os.path.join(output_dir_name,
+                                                           _name_prefix + f"_{device_name}_best_fidelity_backward_swap_{b_swap_count1}_gate_{b_gate_count1}_fidelity{b_sum_ln_cx_fidelity1}.l2p")
 
                 # output to terminal & file
-                f_mapped_circuit.qasm(filename=save_circuit_path)
-                b_mapped_circuit.qasm(filename=save_reversed_circuit_path)
-                save_mapping(filename=save_mapping_path, mapping=f_l2p_mapping)
-                save_mapping(filename=save_reversed_mapping_path, mapping=b_l2p_mapping)
-                print(_name_prefix, device_name, "f", f_swap_count, f_gate_count, "b", b_swap_count, b_gate_count)
-                log_file.write(f"{_name_prefix} {device_name} f {f_swap_count} {f_gate_count} b {b_swap_count} {b_gate_count}\n")
+                f_mapped_circuit0.qasm(filename=save_circuit_path0)
+                b_mapped_circuit0.qasm(filename=save_reversed_circuit_path0)
+                save_mapping(filename=save_mapping_path0, mapping=f_l2p_mapping0)
+                save_mapping(filename=save_reversed_mapping_path0, mapping=b_l2p_mapping0)
+                f_mapped_circuit1.qasm(filename=save_circuit_path1)
+                b_mapped_circuit1.qasm(filename=save_reversed_circuit_path1)
+                save_mapping(filename=save_mapping_path1, mapping=f_l2p_mapping1)
+                save_mapping(filename=save_reversed_mapping_path1, mapping=b_l2p_mapping1)
+                print(_name_prefix, device_name, "gate_count", "f", f_swap_count0, f_gate_count0, f_sum_ln_cx_fidelity0,
+                      "b", b_swap_count0, b_gate_count0, b_sum_ln_cx_fidelity0)
+                print(_name_prefix, device_name, "fidelity", "f", f_swap_count1, f_gate_count1, f_sum_ln_cx_fidelity1,
+                      "b", b_swap_count1, b_gate_count1, b_sum_ln_cx_fidelity1)
+                log_file.write(
+                    f"{_name_prefix} {device_name} gate_count f {f_swap_count0} {f_gate_count0} {f_sum_ln_cx_fidelity0}"
+                    f" b {b_swap_count0} {b_gate_count0} {b_sum_ln_cx_fidelity0}\n")
+                log_file.write(
+                    f"{_name_prefix} {device_name} fidelity f {f_swap_count1} {f_gate_count1} {f_sum_ln_cx_fidelity1}"
+                    f" b {b_swap_count1} {b_gate_count1} {b_sum_ln_cx_fidelity1}\n")
 
 
 def main():
