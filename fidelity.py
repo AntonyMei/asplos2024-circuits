@@ -1,3 +1,7 @@
+import math
+import warnings
+
+
 def Q27_Fake_Auckland():
     fidelity_map = {
         "0_1": 0.01007158893096663,
@@ -502,3 +506,81 @@ def Q127_Fake_Washington():
         "126_125": 0.008490855273640324,
     }
     return fidelity_map
+
+
+def cal_sum_ln_cx_fidelity(circuit, fidelity_map, ref_swap_count):
+    # calculates the sum of ln cx fidelity (i.e. base e)
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=DeprecationWarning)
+        sum_ln_cx_fidelity = 0.0
+        swap_count = 0
+        for gate in circuit:
+            if gate[0].name == "cx":
+                error_rate = fidelity_map[f"{gate.qubits[0].index}_{gate.qubits[1].index}"]
+                sum_ln_cx_fidelity += math.log(1 - error_rate)
+            elif gate[0].name == "swap":
+                error_rate = fidelity_map[f"{gate.qubits[0].index}_{gate.qubits[1].index}"]
+                sum_ln_cx_fidelity += math.log(1 - error_rate) * 3
+                swap_count += 1
+        assert ref_swap_count == swap_count
+    return sum_ln_cx_fidelity
+
+
+def main():
+    # this is a test for fidelity calculation
+    from qiskit import QuantumCircuit
+    circuit = QuantumCircuit(5)
+    circuit.cx(0, 1)
+    circuit.x(1)
+    circuit.cx(1, 2)
+    circuit.swap(2, 3)
+
+    # map the circuit
+    from qiskit.compiler import transpile
+    from qiskit.transpiler import CouplingMap
+    from qiskit.transpiler.passes import SabreLayout, SabreSwap
+    from qiskit.transpiler.passmanager_config import PassManagerConfig
+    from qiskit.transpiler.passmanager import PassManager
+
+    def sabre_pass_manager(pass_manager_config: PassManagerConfig):
+        # gather
+        coupling_map = pass_manager_config.coupling_map
+        seed_transpiler = pass_manager_config.seed_transpiler
+        assert coupling_map is not None
+
+        # build layout & routing pass using sabre
+        sabre = SabreLayout(
+            coupling_map,
+            max_iterations=4,
+            seed=seed_transpiler,
+            swap_trials=20,
+            layout_trials=20,
+            skip_routing=False,
+        )
+
+        return PassManager(sabre)
+
+    coupling = [
+        # 1st row
+        [0, 1], [1, 4], [4, 7], [7, 10], [10, 12], [12, 15], [15, 18],
+        [18, 21], [21, 23],
+        # 2nd row
+        [3, 5], [5, 8], [8, 11], [11, 14], [14, 16], [16, 19], [19, 22],
+        [22, 25], [25, 26],
+        # cols
+        [6, 7], [17, 18], [1, 2], [2, 3], [12, 13], [13, 14], [23, 24],
+        [24, 25], [8, 9], [19, 20]
+    ]
+    reversed_coupling = []
+    for pair in coupling:
+        reversed_coupling.append([pair[1], pair[0]])
+    coupling_map = CouplingMap(couplinglist=coupling + reversed_coupling)
+
+    sabre_manager = sabre_pass_manager(PassManagerConfig(coupling_map=coupling_map, seed_transpiler=0))
+    sabre_circuit = sabre_manager.run(circuit)
+
+    print(cal_sum_ln_cx_fidelity(sabre_circuit, Q27_Fake_Auckland(), 1))
+
+
+if __name__ == '__main__':
+    main()
