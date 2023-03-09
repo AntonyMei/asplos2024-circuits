@@ -53,6 +53,8 @@ def parse_gate_type(tp, circuit):
         return circuit.sx
     elif tp =="sxdg":
         return circuit.sxdg
+    elif tp == "z":
+        return circuit.z
     else:
         print(f"Unknown gate: {tp}")
         raise NotImplementedError
@@ -467,6 +469,7 @@ def sabre_benchmark(input_dir_name, output_dir_name, log_path, seed):
             # skip reversed circuits
             if "reversed" in circuit_name:
                 continue
+            print(circuit_name)
 
             # for forward circuit, generate all necessary file names
             circuit_path = os.path.join(input_dir_name, circuit_name)
@@ -533,7 +536,7 @@ def sabre_benchmark(input_dir_name, output_dir_name, log_path, seed):
 def main():
     # run sabre benchmark on all circuits
     seed = 0
-    log_file_name = "./sabre/run_summary.txt"
+    log_file_name = "run_summary.txt"
     dirs = {"./qasm_files/qasm27": "./sabre/qasm27",
             "./qasm_files/qasm65": "./sabre/qasm65",
             "./qasm_files/qasm127": "./sabre/qasm127",
@@ -546,8 +549,9 @@ def main():
     # run the benchmark
     for input_dir in dirs:
         output_dir = dirs[input_dir]
+        print(input_dir)
         sabre_benchmark(input_dir_name=input_dir, output_dir_name=output_dir,
-                        log_path=log_file_name, seed=seed)
+                        log_path=os.path.join(output_dir, log_file_name), seed=seed)
 
 
 if __name__ == '__main__':

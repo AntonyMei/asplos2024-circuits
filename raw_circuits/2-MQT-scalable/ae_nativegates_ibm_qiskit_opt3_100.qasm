@@ -683,7 +683,7 @@ rz(-pi) q[0];
 cx eval[37],q[0];
 rz(-pi) q[0];
 sx q[0];
-rz(1/(4*pi)) q[0];
+rz(0.0795774) q[0];
 sx q[0];
 cx eval[38],q[0];
 rz(-pi) q[0];
