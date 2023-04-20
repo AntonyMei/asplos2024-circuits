@@ -28,8 +28,8 @@ def sabre_pass_manager(pass_manager_config: PassManagerConfig):
         coupling_map,
         max_iterations=4,
         seed=seed_transpiler,
-        swap_trials=20,
-        layout_trials=20,
+        swap_trials=16,
+        layout_trials=16,
         skip_routing=False,
     )
 
@@ -446,7 +446,7 @@ def async_run_sabre(qasm_file_name, device_name, num_runs, num_saves, seed):
     # run sabre_round for num_runs times and save num_saves ones with the least swap count
     # uses python multiprocess pool with multi-arg support (can also be replaced with pool.starmap)
     # ref: https://stackoverflow.com/questions/5442910/how-to-use-multiprocessing-pool-map-with-multiple-arguments
-    process_pool = multiprocessing.Pool(10)
+    process_pool = multiprocessing.Pool(1)
     sabre_swap_count_list, sabre_gate_count_list, logical2physical_list, sabre_circuit_list, sum_ln_cx_fidelity_list \
         = zip(*process_pool.map(partial(sabre_round, qasm_file_name=qasm_file_name, device_name=device_name),
                                 range(seed, seed + num_runs)))
@@ -505,8 +505,8 @@ def sabre_benchmark(input_dir_name, output_dir_name, log_path, seed):
                 backend_type.append("IBM_Q27_FALCON")
             if num_qubits <= 65:
                 backend_type.append("IBM_Q65_HUMMINGBIRD")
-            if num_qubits <= 127:
-                backend_type.append("IBM_Q127_EAGLE")
+            # if num_qubits <= 127:
+            #     backend_type.append("IBM_Q127_EAGLE")
             assert len(backend_type) > 0, f"Error: the circuit is too large: {num_qubits} qubits!"
 
             # run SABRE 100k benchmark: forward and backward path each has budget 2500
@@ -516,13 +516,13 @@ def sabre_benchmark(input_dir_name, output_dir_name, log_path, seed):
                 f_swap_count, f_gate_count, f_l2p_mapping, f_mapped_circuit, f_sum_ln_cx_fidelity = async_run_sabre(
                     qasm_file_name=circuit_path,
                     device_name=device_name,
-                    num_runs=2500,
+                    num_runs=1,
                     num_saves=1,
                     seed=seed)
                 b_swap_count, b_gate_count, b_l2p_mapping, b_mapped_circuit, b_sum_ln_cx_fidelity = async_run_sabre(
                     qasm_file_name=reversed_circuit_path,
                     device_name=device_name,
-                    num_runs=2500,
+                    num_runs=1,
                     num_saves=1,
                     seed=seed)
 
@@ -593,10 +593,9 @@ def main():
     # run sabre benchmark on all circuits
     seed = 0
     log_file_name = "run_summary.txt"
-    dirs = {"./qasm_files/qasm27": "./sabre/qasm27",
-            "./qasm_files/qasm65": "./sabre/qasm65",
-            "./qasm_files/qasm127": "./sabre/qasm127",
-            "./qasm_files/quartz": "./sabre/quartz"}
+    dirs = {"./qasm_files/qasm27": "./sabre32/qasm27",
+            "./qasm_files/qasm65": "./sabre32/qasm65",
+            "./qasm_files/quartz": "./sabre32/quartz"}
 
     # check if the target dirs exist
     for input_dir in dirs:
