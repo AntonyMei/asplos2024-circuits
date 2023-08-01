@@ -3,7 +3,7 @@ import os
 from qiskit import QuantumCircuit
 from qiskit.compiler import transpile
 from qiskit.transpiler import CouplingMap
-from qiskit.transpiler.passes import SabreLayout, SabreSwap
+from qiskit.transpiler.passes import DenseLayout, StochasticSwap
 from qiskit.transpiler.passmanager_config import PassManagerConfig
 from qiskit.transpiler.passmanager import PassManager
 
@@ -17,23 +17,23 @@ import multiprocessing
 import warnings
 
 
-def sabre_pass_manager(pass_manager_config: PassManagerConfig):
+def stochastic_pass_manager(pass_manager_config: PassManagerConfig):
     # gather
     coupling_map = pass_manager_config.coupling_map
     seed_transpiler = pass_manager_config.seed_transpiler
     assert coupling_map is not None
 
-    # build layout & routing pass using sabre
-    sabre = SabreLayout(
-        coupling_map,
-        max_iterations=4,
-        seed=seed_transpiler,
-        swap_trials=20,
-        layout_trials=20,
-        skip_routing=False,
-    )
+    # layout: dense layout
+    # routing: qiskit stochastic
+    layout_pass = DenseLayout(coupling_map=coupling_map)
+    routing_pass = StochasticSwap(coupling_map=coupling_map,
+                                  trials=1000,
+                                  seed=seed_transpiler)
 
-    return PassManager(sabre)
+    pass_manager = PassManager()
+    pass_manager.append(layout_pass)
+    pass_manager.append(routing_pass)
+    return pass_manager
 
 
 def parse_gate_type(tp, circuit):
@@ -91,35 +91,6 @@ def get_num_qubits(filename):
                 assert False, f"Unknown command: {line}!"
             line = file.readline()
         return num_qubits
-
-
-# def IBM_Q20_Tokyo():
-#     # identical to IBM Q20 Tokyo
-#     coupling = [
-#         # rows
-#         [0, 1], [1, 2], [2, 3], [3, 4],
-#         [5, 6], [6, 7], [7, 8], [8, 9],
-#         [10, 11], [11, 12], [12, 13], [13, 14],
-#         [15, 16], [16, 17], [17, 18], [18, 19],
-#         # cols
-#         [0, 5], [5, 10], [10, 15],
-#         [1, 6], [6, 11], [11, 16],
-#         [2, 7], [7, 12], [12, 17],
-#         [3, 8], [8, 13], [13, 18],
-#         [4, 9], [9, 14], [14, 19],
-#         # crossings
-#         [1, 7], [2, 6],
-#         [3, 9], [4, 8],
-#         [5, 11], [6, 10],
-#         [8, 12], [7, 13],
-#         [11, 17], [12, 16],
-#         [13, 19], [14, 18]
-#     ]
-#     reversed_coupling = []
-#     for pair in coupling:
-#         reversed_coupling.append([pair[1], pair[0]])
-#     coupling_map = CouplingMap(couplinglist=coupling + reversed_coupling)
-#     return coupling_map
 
 
 def IBM_Q27_Falcon():
@@ -339,7 +310,7 @@ def IBM_Q127_Eagle():
     return coupling_map
 
 
-def sabre_round(seed, qasm_file_name, device_name):
+def qiskit_stochastic_round(seed, qasm_file_name, device_name):
     # get device coupling map
     if device_name == "IBM_Q20_TOKYO":
         # coupling_map, num_regs = IBM_Q20_Tokyo(), 20
@@ -409,51 +380,53 @@ def sabre_round(seed, qasm_file_name, device_name):
             # read another line
             line = file.readline()
 
-    # run sabre layout and sabre swap
-    sabre_manager = sabre_pass_manager(PassManagerConfig(coupling_map=coupling_map, seed_transpiler=seed))
-    sabre_circuit = sabre_manager.run(circuit)
+    # run dense layout and qiskit stochastic swap
+    qiskit_stochastic_manager = stochastic_pass_manager(PassManagerConfig(coupling_map=coupling_map,
+                                                                          seed_transpiler=seed))
+    qiskit_stochastic_circuit = qiskit_stochastic_manager.run(circuit)
 
-    # get gate count of sabre
-    sabre_circuit_op_list = dict(sabre_circuit.count_ops())
-    sabre_gate_count = 0
-    sabre_swap_count = 0
-    for key in sabre_circuit_op_list:
+    # get gate count of qiskit_stochastic
+    qiskit_stochastic_circuit_op_list = dict(qiskit_stochastic_circuit.count_ops())
+    qiskit_stochastic_gate_count = 0
+    qiskit_stochastic_swap_count = 0
+    for key in qiskit_stochastic_circuit_op_list:
         if key == "swap":
-            sabre_gate_count += 3 * sabre_circuit_op_list[key]
-            sabre_swap_count = sabre_circuit_op_list[key]
+            qiskit_stochastic_gate_count += 3 * qiskit_stochastic_circuit_op_list[key]
+            qiskit_stochastic_swap_count = qiskit_stochastic_circuit_op_list[key]
         else:
-            sabre_gate_count += sabre_circuit_op_list[key]
+            qiskit_stochastic_gate_count += qiskit_stochastic_circuit_op_list[key]
 
     # save initial layout (ignore warnings)
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", category=DeprecationWarning)
-        initial_layout = sabre_circuit._layout.initial_layout.get_virtual_bits()
+        initial_layout = qiskit_stochastic_circuit._layout.initial_layout.get_virtual_bits()
         logical2physical = {}
         for key in initial_layout:
             logical2physical[key.index] = initial_layout[key]
 
     # calculate sum ln cx fidelity
-    sum_ln_cx_fidelity = cal_sum_ln_cx_fidelity(circuit=sabre_circuit,
+    sum_ln_cx_fidelity = cal_sum_ln_cx_fidelity(circuit=qiskit_stochastic_circuit,
                                                 fidelity_map=fidelity_map,
-                                                ref_swap_count=sabre_swap_count)
+                                                ref_swap_count=qiskit_stochastic_swap_count)
 
-    return sabre_swap_count, sabre_gate_count, logical2physical, sabre_circuit, sum_ln_cx_fidelity
+    return qiskit_stochastic_swap_count, qiskit_stochastic_gate_count, logical2physical, qiskit_stochastic_circuit, sum_ln_cx_fidelity
 
 
-def async_run_sabre(qasm_file_name, device_name, num_runs, num_saves, seed):
-    # run sabre on target circuit and device in parallel
+def async_run_qiskit_stochastic(qasm_file_name, device_name, num_runs, num_saves, seed):
+    # run qiskit_stochastic on target circuit and device in parallel
 
-    # run sabre_round for num_runs times and save num_saves ones with the least swap count
+    # run qiskit_stochastic_round for num_runs times and save num_saves ones with the least swap count
     # uses python multiprocess pool with multi-arg support (can also be replaced with pool.starmap)
     # ref: https://stackoverflow.com/questions/5442910/how-to-use-multiprocessing-pool-map-with-multiple-arguments
-    process_pool = multiprocessing.Pool(10)
-    sabre_swap_count_list, sabre_gate_count_list, logical2physical_list, sabre_circuit_list, sum_ln_cx_fidelity_list \
-        = zip(*process_pool.map(partial(sabre_round, qasm_file_name=qasm_file_name, device_name=device_name),
-                                range(seed, seed + num_runs)))
-    sabre_swap_count_list = list(sabre_swap_count_list)
-    sabre_gate_count_list = list(sabre_gate_count_list)
+    process_pool = multiprocessing.Pool(50)
+    qiskit_stochastic_swap_count_list, qiskit_stochastic_gate_count_list, logical2physical_list, qiskit_stochastic_circuit_list, sum_ln_cx_fidelity_list \
+        = zip(
+        *process_pool.map(partial(qiskit_stochastic_round, qasm_file_name=qasm_file_name, device_name=device_name),
+                          range(seed, seed + num_runs)))
+    qiskit_stochastic_swap_count_list = list(qiskit_stochastic_swap_count_list)
+    qiskit_stochastic_gate_count_list = list(qiskit_stochastic_gate_count_list)
     logical2physical_list = list(logical2physical_list)
-    sabre_circuit_list = list(sabre_circuit_list)
+    qiskit_stochastic_circuit_list = list(qiskit_stochastic_circuit_list)
     sum_ln_cx_fidelity_list = list(sum_ln_cx_fidelity_list)
 
     save_swap_count = []
@@ -462,7 +435,8 @@ def async_run_sabre(qasm_file_name, device_name, num_runs, num_saves, seed):
     save_circuit = []
     save_sum_ln_cx_fidelity = []
     for swap_count, gate_count, mapping, circuit, sum_ln_cx_fidelity in sorted(
-            zip(sabre_swap_count_list, sabre_gate_count_list, logical2physical_list, sabre_circuit_list,
+            zip(qiskit_stochastic_swap_count_list, qiskit_stochastic_gate_count_list, logical2physical_list,
+                qiskit_stochastic_circuit_list,
                 sum_ln_cx_fidelity_list),
             key=lambda pair: pair[0])[:num_saves]:
         save_swap_count.append(swap_count)
@@ -472,7 +446,8 @@ def async_run_sabre(qasm_file_name, device_name, num_runs, num_saves, seed):
         save_sum_ln_cx_fidelity.append(sum_ln_cx_fidelity)
 
     for swap_count, gate_count, mapping, circuit, sum_ln_cx_fidelity in sorted(
-            zip(sabre_swap_count_list, sabre_gate_count_list, logical2physical_list, sabre_circuit_list,
+            zip(qiskit_stochastic_swap_count_list, qiskit_stochastic_gate_count_list, logical2physical_list,
+                qiskit_stochastic_circuit_list,
                 sum_ln_cx_fidelity_list),
             key=lambda pair: pair[4], reverse=True)[:num_saves]:
         save_swap_count.append(swap_count)
@@ -485,8 +460,8 @@ def async_run_sabre(qasm_file_name, device_name, num_runs, num_saves, seed):
     return save_swap_count, save_gate_count, save_logical2physical, save_circuit, save_sum_ln_cx_fidelity
 
 
-def sabre_benchmark(input_dir_name, output_dir_name, log_path, seed):
-    # run sabre for each circuit in the benchmark
+def qiskit_stochastic_benchmark(input_dir_name, output_dir_name, log_path, seed):
+    # run qiskit_stochastic for each circuit in the benchmark
     with open(log_path, "w") as log_file:
         for circuit_name in os.listdir(input_dir_name):
             # skip reversed circuits
@@ -509,20 +484,20 @@ def sabre_benchmark(input_dir_name, output_dir_name, log_path, seed):
                 backend_type.append("IBM_Q127_EAGLE")
             assert len(backend_type) > 0, f"Error: the circuit is too large: {num_qubits} qubits!"
 
-            # run SABRE 100k benchmark: forward and backward path each has budget 2500
-            # since one round runs sabre 20 times, the total number of sabre runs is 2500 * 20 * 2 = 100k
+            # run qiskit_stochastic 100k benchmark: forward and backward path each has budget 50
+            # since one round runs qiskit_stochastic 1000 times, the total number of qiskit_stochastic runs is 50 * 1000 * 2 = 100k
             for device_name in backend_type:
-                # run sabre on both forward and backward circuits
-                f_swap_count, f_gate_count, f_l2p_mapping, f_mapped_circuit, f_sum_ln_cx_fidelity = async_run_sabre(
+                # run qiskit_stochastic on both forward and backward circuits
+                f_swap_count, f_gate_count, f_l2p_mapping, f_mapped_circuit, f_sum_ln_cx_fidelity = async_run_qiskit_stochastic(
                     qasm_file_name=circuit_path,
                     device_name=device_name,
-                    num_runs=2500,
+                    num_runs=50,
                     num_saves=1,
                     seed=seed)
-                b_swap_count, b_gate_count, b_l2p_mapping, b_mapped_circuit, b_sum_ln_cx_fidelity = async_run_sabre(
+                b_swap_count, b_gate_count, b_l2p_mapping, b_mapped_circuit, b_sum_ln_cx_fidelity = async_run_qiskit_stochastic(
                     qasm_file_name=reversed_circuit_path,
                     device_name=device_name,
-                    num_runs=2500,
+                    num_runs=50,
                     num_saves=1,
                     seed=seed)
 
@@ -590,12 +565,12 @@ def sabre_benchmark(input_dir_name, output_dir_name, log_path, seed):
 
 
 def main():
-    # run sabre benchmark on all circuits
+    # run qiskit_stochastic benchmark on all circuits
     seed = 0
     log_file_name = "run_summary.txt"
-    dirs = {"./qasm_files/qasm27": "./sabre32/qasm27",
-            "./qasm_files/qasm65": "./sabre32/qasm65",
-            "./qasm_files/quartz": "./sabre32/quartz"}
+    dirs = {"./qasm_files/qasm27": "./qiskit_stochastic100k/qasm27",
+            "./qasm_files/qasm65": "./qiskit_stochastic100k/qasm65",
+            "./qasm_files/quartz": "./qiskit_stochastic100k/quartz"}
 
     # check if the target dirs exist
     for input_dir in dirs:
@@ -605,8 +580,17 @@ def main():
     for input_dir in dirs:
         output_dir = dirs[input_dir]
         print(input_dir)
-        sabre_benchmark(input_dir_name=input_dir, output_dir_name=output_dir,
-                        log_path=os.path.join(output_dir, log_file_name), seed=seed)
+        qiskit_stochastic_benchmark(input_dir_name=input_dir, output_dir_name=output_dir,
+                                    log_path=os.path.join(output_dir, log_file_name), seed=seed)
+
+
+def test_main():
+    qiskit_stochastic_swap_count, qiskit_stochastic_gate_count, logical2physical, \
+        qiskit_stochastic_circuit, sum_ln_cx_fidelity = qiskit_stochastic_round(seed=0,
+                                                                                qasm_file_name="./qasm_files/quartz/barenco_tof_10_after_heavy.qasm",
+                                                                                device_name="IBM_Q27_FALCON")
+    print(qiskit_stochastic_swap_count, qiskit_stochastic_gate_count, logical2physical,
+          qiskit_stochastic_circuit, sum_ln_cx_fidelity)
 
 
 if __name__ == '__main__':
