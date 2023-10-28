@@ -1,6 +1,7 @@
 import os
 from qiskit.circuit import QuantumCircuit
 
+
 def parse_gate_type(dir_name):
     gate_type_set = {}
     for circuit_name in os.listdir(dir_name):
@@ -77,12 +78,27 @@ def reverse_circuit(processed_dir, reversed_dir):
         reversed_circuit.qasm(filename=os.path.join(reversed_dir, reversed_circuit_name))
 
 
+def prune_dataset(reversed_dir, pruned_dir):
+    i = 0
+    for circuit_name in os.listdir(reversed_dir):
+        # read circuit and inverse
+        circuit = QuantumCircuit.from_qasm_file(os.path.join(reversed_dir, circuit_name))
+        cx_gate_count = circuit.count_ops()['cx']
+
+        # write to file
+        if cx_gate_count <= 598:
+            circuit.qasm(filename=os.path.join(pruned_dir, circuit_name))
+            print(f"Saved {i}: {circuit_name}")
+            i += 1
+
+
 def main():
     # parse_gate_type(dir_name="./satmap_full/raw")
     # process_raw_circuits(raw_dir="./satmap_full/raw", processed_dir="./satmap_full/processed")
-    parse_gate_type(dir_name="./satmap_full/processed")
-    reverse_circuit(processed_dir="./satmap_full/processed", reversed_dir="./satmap_full/processed_with_reversed")
-    parse_gate_type(dir_name="./satmap_full/processed_with_reversed")
+    # parse_gate_type(dir_name="./satmap_full/processed")
+    # reverse_circuit(processed_dir="./satmap_full/processed", reversed_dir="./satmap_full/processed_with_reversed")
+    # parse_gate_type(dir_name="./satmap_full/processed_with_reversed")
+    prune_dataset(reversed_dir="./satmap_full/processed_with_reversed", pruned_dir="./satmap_full/final_pruned")
 
 
 if __name__ == '__main__':
