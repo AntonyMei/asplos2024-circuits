@@ -18,7 +18,9 @@ def sabre_report_depth():
 
             # parse the file name
             circuit_name = result_file_name.split("_best")[0]
-            circuit = QuantumCircuit.from_qasm_file(os.path.join(dir_name, result_file_name))
+            expand_swap_gates(source_file_name=os.path.join(dir_name, result_file_name),
+                              target_file_name="./tmp.qasm")
+            circuit = QuantumCircuit.from_qasm_file("./tmp.qasm")
             gate_count = circuit.size()
             depth = circuit.depth()
 
@@ -48,11 +50,28 @@ def rl_report_depth():
         for circuit_name in os.listdir(dir_name):
             best_depth = 100000
             for mapped_file_name in os.listdir(os.path.join(dir_name, circuit_name)):
-                circuit = QuantumCircuit.from_qasm_file(os.path.join(dir_name, circuit_name, mapped_file_name))
+                # first we expand swaps in the circuit
+                expand_swap_gates(source_file_name=os.path.join(dir_name, circuit_name, mapped_file_name),
+                                  target_file_name="./tmp.qasm")
+                circuit = QuantumCircuit.from_qasm_file("./tmp.qasm")
                 depth = circuit.depth()
                 best_depth = min(best_depth, depth)
             print(circuit_name, best_depth)
         print()
+
+
+def expand_swap_gates(source_file_name, target_file_name):
+    with open(source_file_name, "r") as source_file:
+        with open(target_file_name, "w") as target_file:
+            for line in source_file:
+                if line.startswith("swap"):
+                    # parse the argument list
+                    new_line = line.replace('swap', 'cx')
+                    target_file.write(new_line)
+                    target_file.write(new_line)
+                    target_file.write(new_line)
+                else:
+                    target_file.write(line)
 
 
 def main():
