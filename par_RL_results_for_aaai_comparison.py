@@ -12,7 +12,8 @@ def remove_single_qubit_gates(source_file_name, target_file_name):
                 # skip the line if it is a single qubit gate
                 if line.startswith("u3 ") or line.startswith("u2 ") or line.startswith("u1 ") or line.startswith("s ") \
                         or line.startswith("z ") or line.startswith("rz ") or line.startswith("x ") \
-                        or line.startswith("tdg ") or line.startswith("t ") or line.startswith("h "):
+                        or line.startswith("tdg ") or line.startswith("t ") or line.startswith("h ") \
+                        or line.startswith("measure "):
                     continue
                 # otherwise write the line into target file
                 target_file.write(line)
@@ -34,7 +35,10 @@ def main():
                               target_file_name="./expanded_no_single.qasm")
             circuit = QuantumCircuit.from_qasm_file("./expanded_no_single.qasm")
             depth = circuit.depth()
-            gate_count = circuit.size()
+            if gate_count is None:
+                gate_count = circuit.size()
+            else:
+                assert gate_count == circuit.size()
             best_depth = min(best_depth, depth)
 
         print(f"{circuit_name}: depth = {best_depth}, gate count = {gate_count}")
