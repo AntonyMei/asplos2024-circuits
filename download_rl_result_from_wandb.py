@@ -79,6 +79,7 @@ def main():
     for circuit_name, best_cost in zip(circuit_names, rl_1min):
         print(f"Saving files for {circuit_name}, max run time {max_run_time}.")
         cur_save_dir = os.path.join(file_save_path, circuit_name)
+        os.mkdir(cur_save_dir)
         for run_id in circuit_run_id_list[circuit_name]:
             cur_run = api.run(f"{wandb_project_path}/{run_id}")
             cur_files = cur_run.files()
