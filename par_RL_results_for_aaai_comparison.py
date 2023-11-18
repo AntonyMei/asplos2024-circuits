@@ -10,9 +10,9 @@ def remove_single_qubit_gates(source_file_name, target_file_name):
         with open(target_file_name, "w") as target_file:
             for line in source_file:
                 # skip the line if it is a single qubit gate
-                if line.startswith("u3") or line.startswith("u2") or line.startswith("u1") or line.startswith("s") \
-                        or line.startswith("z") or line.startswith("rz") or line.startswith("x") \
-                        or line.startswith("tdg") or line.startswith("t") or line.startswith("h"):
+                if line.startswith("u3 ") or line.startswith("u2 ") or line.startswith("u1 ") or line.startswith("s ") \
+                        or line.startswith("z ") or line.startswith("rz ") or line.startswith("x ") \
+                        or line.startswith("tdg ") or line.startswith("t ") or line.startswith("h "):
                     continue
                 # otherwise write the line into target file
                 target_file.write(line)
