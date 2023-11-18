@@ -57,6 +57,13 @@ def main():
     else:
         # read from cached file
         print("Reading run ids from disk...")
+        with open(cached_run_id_path, "r") as f:
+            for line in f.readlines():
+                assert line.count('[') == 1 and line.count(']') == 1, f"Bad line: {line}"
+                circuit_name = line.split('[')[0][:-1]
+                run_id_list = '[' + line.split('[')[1]
+                circuit_run_id_list[circuit_name] = eval(run_id_list)
+                assert len(circuit_run_id_list[circuit_name]) == 16
 
 
 if __name__ == '__main__':
