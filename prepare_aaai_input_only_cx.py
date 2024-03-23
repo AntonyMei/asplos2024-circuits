@@ -3,8 +3,8 @@ import os
 
 def main():
     circuit_folder_names = [
-        # "qasm27",
-        # "qasm65",
+        "qasm27",
+        "qasm65",
         "quartz"
     ]
     for folder_name in circuit_folder_names:
@@ -22,8 +22,7 @@ def main():
             with open(f"./aaai_paper/new_circuits/{folder_name}/{circuit_name[:-5]}_onlyCX.qasm", "w") as file:
                 for line in lines:
                     if line.startswith("//") or line.startswith("OPENQASM") or line.startswith("include") \
-                            or line.startswith("qreg") or line.startswith("creg") or line.startswith("cx") or \
-                            line.startswith("barrier"):
+                            or line.startswith("qreg") or line.startswith("creg") or line.startswith("cx"):
                         file.write(line)
                     if line.startswith("cx"):
                         num_cx += 1
