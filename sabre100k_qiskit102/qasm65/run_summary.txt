@@ -1,0 +1,10 @@
+qftentangled_qubit50 IBM_Q65_HUMMINGBIRD gate_count 920 5775 0
+qftentangled_qubit50 IBM_Q65_HUMMINGBIRD fidelity 973 5934 0
+ae_qubit50 IBM_Q65_HUMMINGBIRD gate_count 869 6064 0
+ae_qubit50 IBM_Q65_HUMMINGBIRD fidelity 891 6130 0
+qpeexact_qubit50 IBM_Q65_HUMMINGBIRD gate_count 1014 6299 0
+qpeexact_qubit50 IBM_Q65_HUMMINGBIRD fidelity 1059 6434 0
+qft_qubit50 IBM_Q65_HUMMINGBIRD gate_count 909 5691 0
+qft_qubit50 IBM_Q65_HUMMINGBIRD fidelity 931 5757 0
+su2random_qubit50 IBM_Q65_HUMMINGBIRD gate_count 3958 16349 0
+su2random_qubit50 IBM_Q65_HUMMINGBIRD fidelity 4229 17162 0
