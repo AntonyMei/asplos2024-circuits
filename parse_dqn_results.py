@@ -37,8 +37,9 @@ def main():
                                                    "mapped_depth": mapped_depth}
 
     # print
-    for circuit_name, result in final_results.items():
-        print(circuit_name, result)
+    sorted_names = sorted(list(final_results.keys()))
+    for circuit_name in sorted_names:
+        print(circuit_name, final_results[circuit_name])
 
 
 if __name__ == '__main__':
