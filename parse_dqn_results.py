@@ -6,7 +6,7 @@ from typing import Dict, Tuple
 
 def main():
     # read file
-    file_name = "./dqn_route/dqn_paper_results/dqn_paper_results.pkl"
+    file_name = "./dqn_route/dqn_on_paper_main_results/q27.pkl"
     with open(file_name, "rb") as f:
         results = pickle.load(f)
 
@@ -22,6 +22,11 @@ def main():
             mapped_gate_count = result["ori_circuit_size"] + 3 * result["swap_count"]
             mapped_depth = result["new_depth"]  # depth is after decomposition
             assert original_gate_count == result["ori_cx_count"]
+
+            # circuit not valid
+            if result["res"] == -1:
+                print(f"Invalid circuit {circuit_name} found!")
+                continue
 
             # append to final
             if circuit_name not in final_results:
