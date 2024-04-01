@@ -33,12 +33,14 @@ def main():
                 final_results[circuit_name] = {"original_gate_count": original_gate_count,
                                                "original_depth": original_depth,
                                                "mapped_gate_count": mapped_gate_count,
+                                               "swaps": result["swap_count"],
                                                "mapped_depth": mapped_depth}
             else:
                 if mapped_gate_count < final_results[circuit_name]["mapped_gate_count"]:
                     final_results[circuit_name] = {"original_gate_count": original_gate_count,
                                                    "original_depth": original_depth,
                                                    "mapped_gate_count": mapped_gate_count,
+                                                   "swaps": result["swap_count"],
                                                    "mapped_depth": mapped_depth}
 
     # print
