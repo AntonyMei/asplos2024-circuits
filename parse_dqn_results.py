@@ -6,7 +6,7 @@ from typing import Dict, Tuple
 
 def main():
     # read file
-    file_name = "./dqn_route/dqn_on_paper_main_results/q27.pkl"
+    file_name = "./dqn_route/dqn_on_paper_main_results/q65.pkl"
     with open(file_name, "rb") as f:
         results = pickle.load(f)
 
