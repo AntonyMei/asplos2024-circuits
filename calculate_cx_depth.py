@@ -1,4 +1,5 @@
 import os
+import cirq
 
 from qiskit.circuit import QuantumCircuit
 
@@ -61,6 +62,18 @@ def parse_folder_sabre(folder_name):
         print(f"{file_name} - {depth=}")
 
 
+def parse_folder_qroute(folder_name):
+    for file_name in os.listdir(folder_name):
+        # read circuit from json using cirq
+        with open(os.path.join(folder_name, file_name)) as file:
+            cirq_circuit = cirq.read_json(file)
+        qasm_str = cirq_circuit.to_qasm()
+        circuit = QuantumCircuit.from_qasm_str(qasm_str)
+        circuit.qasm(filename="./tmp.qasm")
+        depth = report_cx_depth_with_swap_decomposition("./tmp.qasm")
+        print(f"{file_name} - {depth=}")
+
+
 def main():
     # original circuit
     # parse_folder(folder_name="./qasm_files/qasm27")
@@ -79,12 +92,15 @@ def main():
     # SABREx1000 (qiskit 1.0.2)
     # parse_folder_sabre(folder_name="./sabre1000/qasm27")
     # parse_folder_sabre(folder_name="./sabre1000/qasm65")
-    parse_folder_sabre(folder_name="./sabre1000/quartz")
+    # parse_folder_sabre(folder_name="./sabre1000/quartz")
 
     # QRoute
+    # parse_folder_qroute(folder_name="./aaai_paper/new_results/q27")
+    # parse_folder_qroute(folder_name="./aaai_paper/new_results/q65")
 
     # DQN Route
-    # use parse_dqn_results.py
+    # use parse_dqn_results.py (the depth reported there only contains cx and SWAPs are decomposed)
+    pass
 
 
 if __name__ == '__main__':
